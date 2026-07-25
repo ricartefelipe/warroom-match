@@ -1,0 +1,31 @@
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5436/warroom
+    username: warroom
+    password: warroom
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  mail:
+    host: localhost
+    port: 1025
+
+warroom:
+  auth:
+    app-base-url: http://localhost:3000
+    api-base-url: http://localhost:8080
+    from-email: test@warroom.local
+    magic-link-ttl-minutes: 20
+    session-ttl-days: 30
+    expose-magic-link: true
+    trust-forwarded-host: false
+  billing:
+    platform-fee-bps: 1800
+    min-budget-cents: 20000
+    demo-escrow: true
+    stripe-api-key: ""
+    stripe-webhook-secret: ""
+  cors:
+    allowed-origins: http://localhost:3000

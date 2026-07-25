@@ -1,0 +1,216 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-init
+      author: warroom
+      changes:
+        - createTable:
+            tableName: accounts
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: email, type: varchar(320), constraints: { nullable: false, unique: true } }
+              - column: { name: name, type: varchar(200) }
+              - column: { name: role, type: varchar(20), constraints: { nullable: false }, defaultValue: unset }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+
+        - createTable:
+            tableName: login_tokens
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: account_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: token_hash, type: varchar(128), constraints: { nullable: false, unique: true } }
+              - column: { name: expires_at, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: login_tokens
+            baseColumnNames: account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_login_tokens_account
+
+        - createTable:
+            tableName: sessions
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: account_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: token_hash, type: varchar(128), constraints: { nullable: false, unique: true } }
+              - column: { name: expires_at, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: sessions
+            baseColumnNames: account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_sessions_account
+        - createIndex:
+            tableName: sessions
+            indexName: idx_sessions_account
+            columns:
+              - column: { name: account_id }
+
+        - createTable:
+            tableName: profiles
+            columns:
+              - column: { name: account_id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: skills, type: text }
+              - column: { name: seniority, type: varchar(40) }
+              - column: { name: availability, type: varchar(20) }
+              - column: { name: bio, type: text }
+              - column: { name: hourly_rate_cents, type: bigint }
+              - column: { name: vetted, type: boolean, constraints: { nullable: false }, defaultValueBoolean: false }
+              - column: { name: company_name, type: varchar(200) }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: profiles
+            baseColumnNames: account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_profiles_account
+
+        - createTable:
+            tableName: jobs
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: company_account_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: title, type: varchar(300), constraints: { nullable: false } }
+              - column: { name: description, type: text, constraints: { nullable: false } }
+              - column: { name: urgency, type: varchar(10), constraints: { nullable: false } }
+              - column: { name: budget_cents, type: bigint, constraints: { nullable: false } }
+              - column: { name: skills_needed, type: text }
+              - column: { name: status, type: varchar(30), constraints: { nullable: false } }
+              - column: { name: matched_pro_account_id, type: uuid }
+              - column: { name: response_deadline_at, type: timestamptz }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: updated_at, type: timestamptz, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: jobs
+            baseColumnNames: company_account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_jobs_company_account
+        - addForeignKeyConstraint:
+            baseTableName: jobs
+            baseColumnNames: matched_pro_account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_jobs_matched_pro
+        - createIndex:
+            tableName: jobs
+            indexName: idx_jobs_status_created
+            columns:
+              - column: { name: status }
+              - column: { name: created_at }
+        - createIndex:
+            tableName: jobs
+            indexName: idx_jobs_company
+            columns:
+              - column: { name: company_account_id }
+
+        - createTable:
+            tableName: applications
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: job_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: pro_account_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: pitch, type: text, constraints: { nullable: false } }
+              - column: { name: status, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: applications
+            baseColumnNames: job_id
+            referencedTableName: jobs
+            referencedColumnNames: id
+            constraintName: fk_applications_job
+        - addForeignKeyConstraint:
+            baseTableName: applications
+            baseColumnNames: pro_account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_applications_pro
+        - addUniqueConstraint:
+            tableName: applications
+            columnNames: job_id, pro_account_id
+            constraintName: uq_applications_job_pro
+        - createIndex:
+            tableName: applications
+            indexName: idx_applications_job
+            columns:
+              - column: { name: job_id }
+
+        - createTable:
+            tableName: escrow_payments
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: job_id, type: uuid, constraints: { nullable: false, unique: true } }
+              - column: { name: amount_cents, type: bigint, constraints: { nullable: false } }
+              - column: { name: platform_fee_cents, type: bigint, constraints: { nullable: false } }
+              - column: { name: pro_amount_cents, type: bigint, constraints: { nullable: false } }
+              - column: { name: status, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: stripe_session_id, type: varchar(200) }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: released_at, type: timestamptz }
+        - addForeignKeyConstraint:
+            baseTableName: escrow_payments
+            baseColumnNames: job_id
+            referencedTableName: jobs
+            referencedColumnNames: id
+            constraintName: fk_escrow_job
+
+        - createTable:
+            tableName: messages
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: job_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: sender_account_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: body, type: text, constraints: { nullable: false } }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: messages
+            baseColumnNames: job_id
+            referencedTableName: jobs
+            referencedColumnNames: id
+            constraintName: fk_messages_job
+        - addForeignKeyConstraint:
+            baseTableName: messages
+            baseColumnNames: sender_account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_messages_sender
+        - createIndex:
+            tableName: messages
+            indexName: idx_messages_job_created
+            columns:
+              - column: { name: job_id }
+              - column: { name: created_at }
+
+        - createTable:
+            tableName: reviews
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: job_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: reviewer_account_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: reviewee_account_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: rating, type: int, constraints: { nullable: false } }
+              - column: { name: comment, type: text }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: reviews
+            baseColumnNames: job_id
+            referencedTableName: jobs
+            referencedColumnNames: id
+            constraintName: fk_reviews_job
+        - addForeignKeyConstraint:
+            baseTableName: reviews
+            baseColumnNames: reviewer_account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_reviews_reviewer
+        - addForeignKeyConstraint:
+            baseTableName: reviews
+            baseColumnNames: reviewee_account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_reviews_reviewee
+        - addUniqueConstraint:
+            tableName: reviews
+            columnNames: job_id, reviewer_account_id
+            constraintName: uq_reviews_job_reviewer
