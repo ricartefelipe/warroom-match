@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${WARROOM_DB_NAME:-warroom}
+      POSTGRES_USER: ${WARROOM_DB_USER:-warroom}
+      POSTGRES_PASSWORD: ${WARROOM_DB_PASSWORD:?set WARROOM_DB_PASSWORD}
+    volumes:
+      - warroom_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./apps/api
+    environment:
+      WARROOM_DB_URL: jdbc:postgresql://postgres:5432/${WARROOM_DB_NAME:-warroom}
+      WARROOM_DB_USER: ${WARROOM_DB_USER:-warroom}
+      WARROOM_DB_PASSWORD: ${WARROOM_DB_PASSWORD}
+      WARROOM_CORS_ORIGINS: https://${WARROOM_DOMAIN}
+      WARROOM_APP_BASE_URL: https://${WARROOM_DOMAIN}
+      WARROOM_API_BASE_URL: https://${WARROOM_DOMAIN}
+      WARROOM_EXPOSE_MAGIC_LINK: "false"
+      WARROOM_TRUST_FORWARDED_HOST: "true"
+      WARROOM_DEMO_ESCROW: ${WARROOM_DEMO_ESCROW:-false}
+      WARROOM_SMTP_HOST: ${WARROOM_SMTP_HOST}
+      WARROOM_SMTP_PORT: ${WARROOM_SMTP_PORT:-587}
+      WARROOM_SMTP_USER: ${WARROOM_SMTP_USER:-}
+      WARROOM_SMTP_PASSWORD: ${WARROOM_SMTP_PASSWORD:-}
+      WARROOM_SMTP_AUTH: ${WARROOM_SMTP_AUTH:-true}
+      WARROOM_SMTP_STARTTLS: ${WARROOM_SMTP_STARTTLS:-true}
+      WARROOM_FROM_EMAIL: ${WARROOM_FROM_EMAIL}
+      STRIPE_API_KEY: ${STRIPE_API_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_BASE_URL: same-origin
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.9-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      WARROOM_DOMAIN: ${WARROOM_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+
+volumes:
+  warroom_pg:
+  caddy_data:
+  caddy_config:

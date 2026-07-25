@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: warroom
+      POSTGRES_USER: warroom
+      POSTGRES_PASSWORD: warroom
+    volumes:
+      - warroom_free_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warroom -d warroom"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "18027:8025"
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.prebuilt
+    environment:
+      WARROOM_DB_URL: jdbc:postgresql://postgres:5432/warroom
+      WARROOM_DB_USER: warroom
+      WARROOM_DB_PASSWORD: warroom
+      WARROOM_CORS_ORIGINS: http://localhost:9082
+      WARROOM_APP_BASE_URL: http://localhost:9082
+      WARROOM_API_BASE_URL: http://localhost:9082
+      WARROOM_EXPOSE_MAGIC_LINK: "true"
+      WARROOM_TRUST_FORWARDED_HOST: "true"
+      WARROOM_DEMO_ESCROW: "true"
+      WARROOM_SMTP_HOST: mailpit
+      WARROOM_SMTP_PORT: "1025"
+      WARROOM_SMTP_AUTH: "false"
+      WARROOM_SMTP_STARTTLS: "false"
+      WARROOM_FROM_EMAIL: noreply@warroom.local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_BASE_URL: same-origin
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2.9-alpine
+    ports:
+      - "9082:80"
+    volumes:
+      - ./deploy/Caddyfile.free:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - api
+      - web
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://caddy:80
+    depends_on:
+      - caddy
+    restart: unless-stopped
+
+volumes:
+  warroom_free_pg:

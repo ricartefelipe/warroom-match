@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: warroom
+      POSTGRES_USER: warroom
+      POSTGRES_PASSWORD: warroom
+    ports:
+      - "5435:5432"
+    volumes:
+      - warroom_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warroom -d warroom"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "18027:8025"
+      - "11027:1025"
+
+volumes:
+  warroom_pg:
