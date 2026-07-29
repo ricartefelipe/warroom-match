@@ -65,8 +65,7 @@ export default function JobDetailPage() {
       const msgs = await listMessages(session.sessionToken, jobId);
       setMessages(msgs);
     } catch {
-      /* polling silencioso */
-    }
+          }
   }, [jobId]);
 
   useEffect(() => {
