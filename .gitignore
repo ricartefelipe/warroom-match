@@ -13,3 +13,7 @@ dist/
 coverage/
 tmp/
 data/
+.cursor/
+.superpowers/
+AGENTS.md
+PROMPT-EVOLUCAO.md
