@@ -72,10 +72,12 @@ public class ProfileService {
             Profile profile = new Profile(accountId, now);
             return profileRepository.save(profile);
         });
-        return Map.of(
-                "accountId", account.getId().toString(),
-                "role", account.getRole().name()
-        );
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("accountId", account.getId().toString());
+        body.put("email", account.getEmail());
+        body.put("name", account.getName());
+        body.put("role", account.getRole().name());
+        return body;
     }
 
     private Map<String, Object> toResponse(Account account, Profile profile) {

@@ -143,6 +143,17 @@ public class AuthService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "account_not_found"));
     }
 
+    @Transactional(readOnly = true)
+    public Map<String, Object> currentAccount(UUID accountId) {
+        Account account = requireAccount(accountId);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("accountId", account.getId().toString());
+        body.put("email", account.getEmail());
+        body.put("name", account.getName());
+        body.put("role", account.getRole() == AccountRole.unset ? null : account.getRole().name());
+        return body;
+    }
+
     @Transactional
     public Account setRole(UUID accountId, AccountRole role) {
         if (role == AccountRole.unset) {
@@ -157,11 +168,7 @@ public class AuthService {
     }
 
     private Map<String, Object> sessionResponse(Account account, String sessionRaw) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("accountId", account.getId().toString());
-        body.put("email", account.getEmail());
-        body.put("name", account.getName());
-        body.put("role", account.getRole().name());
+        Map<String, Object> body = currentAccount(account.getId());
         body.put("sessionToken", sessionRaw);
         return body;
     }
