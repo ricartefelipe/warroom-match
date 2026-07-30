@@ -49,6 +49,11 @@ public class AuthController {
         return authService.verifyMagicLink(token);
     }
 
+    @GetMapping("/me")
+    public Map<String, Object> me() {
+        return authService.currentAccount(AccountContext.requireAccountId());
+    }
+
     @PostMapping("/logout")
     public Map<String, Boolean> logout(HttpServletRequest request) {
         String bearer = extractBearer(request);

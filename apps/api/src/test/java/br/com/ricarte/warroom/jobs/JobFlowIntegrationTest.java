@@ -1,6 +1,7 @@
 package br.com.ricarte.warroom.jobs;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -128,10 +129,21 @@ class JobFlowIntegrationTest extends PostgresIntegrationTest {
         String sessionToken = objectMapper.readTree(verify.getResponse().getContentAsString())
                 .get("sessionToken").asText();
 
+        mockMvc.perform(get("/v1/auth/me")
+                        .header("Authorization", "Bearer " + sessionToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(email))
+                .andExpect(jsonPath("$.role").value(nullValue()));
+
         mockMvc.perform(post("/v1/me/role")
                         .header("Authorization", "Bearer " + sessionToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\":\"" + role + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value(role));
+
+        mockMvc.perform(get("/v1/auth/me")
+                        .header("Authorization", "Bearer " + sessionToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value(role));
 

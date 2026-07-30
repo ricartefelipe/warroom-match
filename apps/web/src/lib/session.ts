@@ -10,6 +10,13 @@ export type AccountSession = {
 
 const KEY = "warroom.session";
 
+function normalizeRole(role: unknown): UserRole | null {
+  if (role === "company" || role === "pro") {
+    return role;
+  }
+  return null;
+}
+
 export function loadSession(): AccountSession | null {
   if (typeof window === "undefined") {
     return null;
@@ -24,14 +31,17 @@ export function loadSession(): AccountSession | null {
       window.localStorage.removeItem(KEY);
       return null;
     }
-    return parsed;
+    return { ...parsed, role: normalizeRole(parsed.role) };
   } catch {
     return null;
   }
 }
 
 export function saveSession(session: AccountSession): void {
-  window.localStorage.setItem(KEY, JSON.stringify(session));
+  window.localStorage.setItem(
+    KEY,
+    JSON.stringify({ ...session, role: normalizeRole(session.role) })
+  );
 }
 
 export function clearSession(): void {
