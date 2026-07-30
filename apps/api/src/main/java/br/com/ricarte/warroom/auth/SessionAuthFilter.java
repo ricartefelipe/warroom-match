@@ -56,7 +56,9 @@ public class SessionAuthFilter extends OncePerRequestFilter {
     }
 
     private boolean requiresSession(String path) {
-        if (path.startsWith("/v1/auth/magic-link") || path.startsWith("/v1/auth/verify")) {
+        if (path.startsWith("/v1/auth/magic-link")
+                || path.startsWith("/v1/auth/verify")
+                || path.startsWith("/v1/auth/password")) {
             return false;
         }
         if (path.startsWith("/v1/billing/stripe/webhook")) {
