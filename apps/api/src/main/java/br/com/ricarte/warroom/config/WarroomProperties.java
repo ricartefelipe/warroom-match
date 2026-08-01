@@ -6,7 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record WarroomProperties(
         Auth auth,
         Billing billing,
-        Cors cors
+        Cors cors,
+        Totalrecall totalrecall
 ) {
     public record Auth(
             String appBaseUrl,
@@ -32,5 +33,8 @@ public record WarroomProperties(
     }
 
     public record Cors(String allowedOrigins) {
+    }
+
+    public record Totalrecall(String provisionToken) {
     }
 }

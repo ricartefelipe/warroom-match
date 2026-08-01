@@ -58,6 +58,8 @@ warroom:
     stripe-webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
   cors:
     allowed-origins: ${WARROOM_CORS_ORIGINS:http://localhost:3000}
+  totalrecall:
+    provision-token: ${TOTALRECALL_PROVISION_TOKEN:}
 
 logging:
   level:
