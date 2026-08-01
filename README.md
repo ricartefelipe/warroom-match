@@ -41,7 +41,7 @@ cd apps/web && npm install && npm run dev
 ```
 
 Painel: `http://localhost:9082` — detalhes em [`docs/FREE.md`](docs/FREE.md).
-O login por senha usa o sistema TotalRecall `warroom-match`; configure `TOTALRECALL_URL=https://54.94.163.136.sslip.io`.
+O login usa magic link nativo. O TotalRecall não é modo de login do produto.
 
 ## Produção
 

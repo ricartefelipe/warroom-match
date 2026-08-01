@@ -50,10 +50,6 @@ warroom:
     session-ttl-days: 30
     expose-magic-link: ${WARROOM_EXPOSE_MAGIC_LINK:false}
     trust-forwarded-host: ${WARROOM_TRUST_FORWARDED_HOST:false}
-  totalrecall:
-    enabled: ${TOTALRECALL_ENABLED:true}
-    base-url: ${TOTALRECALL_URL:https://54.94.163.136.sslip.io}
-    system-slug: ${TOTALRECALL_SYSTEM_SLUG:warroom-match}
   billing:
     platform-fee-bps: ${WARROOM_PLATFORM_FEE_BPS:1800}
     min-budget-cents: ${WARROOM_MIN_BUDGET_CENTS:20000}
