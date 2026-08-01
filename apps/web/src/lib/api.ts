@@ -117,6 +117,15 @@ export async function requestMagicLink(
   return parse(response);
 }
 
+export async function loginWithPassword(email: string, password: string): Promise<AccountSession> {
+  const response = await fetch(`${resolveApiBase()}/v1/auth/password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  return parse<AccountSession>(response);
+}
+
 export async function verifyMagicLink(token: string): Promise<AccountSession> {
   const response = await fetch(`${resolveApiBase()}/v1/auth/verify`, {
     method: "POST",
@@ -126,17 +135,6 @@ export async function verifyMagicLink(token: string): Promise<AccountSession> {
   return parse<AccountSession>(response);
 }
 
-export async function loginWithPassword(
-  email: string,
-  password: string
-): Promise<AccountSession> {
-  const response = await fetch(`${resolveApiBase()}/v1/auth/password`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  return parse<AccountSession>(response);
-}
 
 export async function getMe(sessionToken: string): Promise<AccountSession> {
   const response = await fetch(`${resolveApiBase()}/v1/auth/me`, {
