@@ -1,15 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import {
   formatBrl,
+  getProfile,
   listJobs,
   statusLabel,
+  submitVetting,
   urgencyLabel,
+  vettingLabel,
   type JobSummary,
+  type Profile,
 } from "@/lib/api";
 import { loadSession } from "@/lib/session";
 
@@ -19,6 +23,9 @@ export default function ProPage() {
   const [myJobs, setMyJobs] = useState<JobSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [evidence, setEvidence] = useState("");
+  const [sending, setSending] = useState(false);
 
   const refresh = useCallback(async () => {
     const session = loadSession();
@@ -31,10 +38,12 @@ export default function ProPage() {
       return;
     }
     try {
-      const [open, mine] = await Promise.all([
+      const [open, mine, me] = await Promise.all([
         listJobs(session.sessionToken, "open"),
         listJobs(session.sessionToken, "mine"),
+        getProfile(session.sessionToken),
       ]);
+      setProfile(me);
       setOpenJobs(open);
       setMyJobs(mine.filter((j) => j.myApplicationStatus != null));
     } catch (err) {
@@ -47,6 +56,27 @@ export default function ProPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  async function onSubmitVetting(event: FormEvent) {
+    event.preventDefault();
+    const session = loadSession();
+    if (!session || !evidence.trim()) {
+      return;
+    }
+    setSending(true);
+    setError(null);
+    try {
+      await submitVetting(session.sessionToken, evidence.trim());
+      setEvidence("");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "falha_vetting");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const approved = profile?.vettingStatus === "approved";
 
   function applicationLabel(status: JobSummary["myApplicationStatus"]): string {
     switch (status) {
@@ -70,9 +100,19 @@ export default function ProPage() {
 
   return (
     <AppShell>
+      <VettingPanel
+        profile={profile}
+        evidence={evidence}
+        sending={sending}
+        onEvidenceChange={setEvidence}
+        onSubmit={onSubmitVetting}
+      />
+
       <section className="panel">
         <h1 className="hero-title">Feed de plantões</h1>
-        <p className="muted">Jobs abertos disponíveis para candidatura.</p>
+        <p className="muted">
+          {approved ? "Jobs abertos disponíveis para candidatura." : "Você verá os jobs, mas só poderá se candidatar após a aprovação."}
+        </p>
         {loading ? (
           <p className="muted" style={{ marginTop: "1rem" }}>
             Carregando...
@@ -131,5 +171,57 @@ export default function ProPage() {
         )}
       </section>
     </AppShell>
+  );
+}
+
+type VettingPanelProps = Readonly<{
+  profile: Profile | null;
+  evidence: string;
+  sending: boolean;
+  onEvidenceChange: (value: string) => void;
+  onSubmit: (event: FormEvent) => void;
+}>;
+
+function VettingPanel({ profile, evidence, sending, onEvidenceChange, onSubmit }: VettingPanelProps) {
+  const status = profile?.vettingStatus;
+  const approved = status === "approved";
+  const canSubmit = !approved && status !== "suspended";
+  let submitLabel = "Enviar para análise";
+  if (sending) {
+    submitLabel = "Enviando...";
+  } else if (status === "submitted") {
+    submitLabel = "Reenviar evidências";
+  }
+
+  return (
+    <section className="panel">
+      <h1 className="hero-title">Verificação profissional</h1>
+      <p className="muted">
+        Status: <strong>{vettingLabel(status)}</strong>
+        {profile?.vettingNote ? ` · ${profile.vettingNote}` : ""}
+      </p>
+      {approved ? null : (
+        <p className="muted">
+          Só profissionais aprovados pelo suporte podem se candidatar. Envie links públicos, referências e
+          um resumo da experiência. Não envie documentos de identidade por aqui.
+        </p>
+      )}
+      {canSubmit ? (
+        <form onSubmit={onSubmit}>
+          <div className="field">
+            <label htmlFor="evidence">Evidências</label>
+            <textarea
+              id="evidence"
+              value={evidence}
+              onChange={(e) => onEvidenceChange(e.target.value)}
+              placeholder="github.com/..., linkedin.com/in/..., referências e resumo"
+            />
+          </div>
+          <button className="button" type="submit" disabled={sending || !evidence.trim()}>
+            {submitLabel}
+          </button>
+        </form>
+      ) : null}
+    </section>
   );
 }

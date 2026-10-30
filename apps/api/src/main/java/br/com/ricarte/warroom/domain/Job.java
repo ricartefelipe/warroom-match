@@ -6,6 +6,8 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -44,11 +46,19 @@ public class Job {
     @Column(name = "response_deadline_at")
     private Instant responseDeadlineAt;
 
+    @Column(name = "delivered_at")
+    private Instant deliveredAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    /** Optimistic lock: two concurrent transitions of the same job cannot both win. */
+    @Version
+    @Column(nullable = false)
+    private long version;
 
     protected Job() {
     }
@@ -63,8 +73,7 @@ public class Job {
             String skillsNeeded,
             JobStatus status,
             Instant responseDeadlineAt,
-            Instant createdAt,
-            Instant updatedAt
+            Instant createdAt
     ) {
         this.id = id;
         this.companyAccountId = companyAccountId;
@@ -76,7 +85,36 @@ public class Job {
         this.status = status;
         this.responseDeadlineAt = responseDeadlineAt;
         this.createdAt = createdAt;
-        this.updatedAt = updatedAt;
+        this.updatedAt = createdAt;
+    }
+
+    /** Moves to {@code target} or throws {@link IllegalTransitionException}. */
+    public void transitionTo(JobStatus target, Instant now) {
+        if (!status.canTransitionTo(target)) {
+            throw new IllegalTransitionException("job", status.name(), target.name());
+        }
+        this.status = target;
+        this.updatedAt = now;
+        if (target == JobStatus.delivered) {
+            this.deliveredAt = now;
+        }
+    }
+
+    public void match(UUID proAccountId, Instant now) {
+        transitionTo(JobStatus.matched, now);
+        this.matchedProAccountId = proAccountId;
+    }
+
+    public boolean deadlinePassed(Instant now) {
+        return responseDeadlineAt != null && now.isAfter(responseDeadlineAt);
+    }
+
+    public boolean isOwner(UUID accountId) {
+        return companyAccountId.equals(accountId);
+    }
+
+    public boolean isMatchedPro(UUID accountId) {
+        return matchedProAccountId != null && matchedProAccountId.equals(accountId);
     }
 
     public UUID getId() {
@@ -111,20 +149,16 @@ public class Job {
         return status;
     }
 
-    public void setStatus(JobStatus status) {
-        this.status = status;
-    }
-
     public UUID getMatchedProAccountId() {
         return matchedProAccountId;
     }
 
-    public void setMatchedProAccountId(UUID matchedProAccountId) {
-        this.matchedProAccountId = matchedProAccountId;
-    }
-
     public Instant getResponseDeadlineAt() {
         return responseDeadlineAt;
+    }
+
+    public Instant getDeliveredAt() {
+        return deliveredAt;
     }
 
     public Instant getCreatedAt() {
@@ -135,7 +169,7 @@ public class Job {
         return updatedAt;
     }
 
-    public void setUpdatedAt(Instant updatedAt) {
-        this.updatedAt = updatedAt;
+    public long getVersion() {
+        return version;
     }
 }

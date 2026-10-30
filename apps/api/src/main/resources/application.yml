@@ -42,6 +42,8 @@ management:
         enabled: true
 
 warroom:
+  # local ou production. Em production o modo financeiro demo é recusado na inicialização.
+  environment: ${WARROOM_ENVIRONMENT:local}
   auth:
     app-base-url: ${WARROOM_APP_BASE_URL:http://localhost:3000}
     api-base-url: ${WARROOM_API_BASE_URL:http://localhost:8080}
@@ -50,10 +52,17 @@ warroom:
     session-ttl-days: 30
     expose-magic-link: ${WARROOM_EXPOSE_MAGIC_LINK:false}
     trust-forwarded-host: ${WARROOM_TRUST_FORWARDED_HOST:false}
+    # Contas de suporte (papel admin). Só por configuração; ninguém escolhe admin na API.
+    admin-emails: ${WARROOM_ADMIN_EMAILS:}
+    magic-link-requests-per-window: ${WARROOM_MAGIC_LINK_LIMIT:5}
+    magic-link-requests-per-address: ${WARROOM_MAGIC_LINK_ADDRESS_LIMIT:60}
+    magic-link-window-minutes: ${WARROOM_MAGIC_LINK_WINDOW_MINUTES:15}
   billing:
+    # demo: provedor simulado, sinalizado em API e painel; stripe: exige STRIPE_API_KEY e STRIPE_WEBHOOK_SECRET.
+    mode: ${WARROOM_BILLING_MODE:demo}
     platform-fee-bps: ${WARROOM_PLATFORM_FEE_BPS:1800}
     min-budget-cents: ${WARROOM_MIN_BUDGET_CENTS:20000}
-    demo-escrow: ${WARROOM_DEMO_ESCROW:true}
+    currency: ${WARROOM_CURRENCY:brl}
     stripe-api-key: ${STRIPE_API_KEY:}
     stripe-webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
   cors:

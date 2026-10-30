@@ -1,10 +1,6 @@
 spring:
   main:
     allow-bean-definition-overriding: true
-  datasource:
-    url: jdbc:postgresql://127.0.0.1:5436/warroom
-    username: warroom
-    password: warroom
   jpa:
     hibernate:
       ddl-auto: validate
@@ -13,6 +9,7 @@ spring:
     port: 1025
 
 warroom:
+  environment: local
   auth:
     app-base-url: http://localhost:3000
     api-base-url: http://localhost:8080
@@ -21,10 +18,16 @@ warroom:
     session-ttl-days: 30
     expose-magic-link: true
     trust-forwarded-host: false
+    admin-emails: support@warroom.test
+    # O limite real é coberto por MagicLinkRateLimiterTest; aqui os testes fazem muitos logins.
+    magic-link-requests-per-window: 100000
+    magic-link-requests-per-address: 100000
+    magic-link-window-minutes: 15
   billing:
+    mode: demo
     platform-fee-bps: 1800
     min-budget-cents: 20000
-    demo-escrow: true
+    currency: brl
     stripe-api-key: ""
     stripe-webhook-secret: ""
   cors:

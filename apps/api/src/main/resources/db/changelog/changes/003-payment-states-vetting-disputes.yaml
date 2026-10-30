@@ -1,0 +1,129 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-payment-states-vetting-disputes
+      author: warroom
+      comment: >-
+        Estados financeiros confirmados pelo provedor (job_payments), eventos duráveis de pagamento,
+        vetting com histórico, disputas, lock otimista em jobs e uma única candidatura aceita por job.
+      changes:
+        - renameTable:
+            oldTableName: escrow_payments
+            newTableName: job_payments
+        - addColumn:
+            tableName: job_payments
+            columns:
+              - column: { name: provider, type: varchar(10), defaultValue: demo, constraints: { nullable: false } }
+              - column: { name: currency, type: varchar(3), defaultValue: brl, constraints: { nullable: false } }
+              - column: { name: checkout_attempts, type: int, defaultValueNumeric: 1, constraints: { nullable: false } }
+              - column: { name: stripe_payment_intent_id, type: varchar(200) }
+              - column: { name: stripe_transfer_id, type: varchar(200) }
+              - column: { name: stripe_refund_id, type: varchar(200) }
+              - column: { name: failure_reason, type: text }
+              - column: { name: paid_at, type: timestamptz }
+              - column: { name: payout_requested_at, type: timestamptz }
+              - column: { name: refunded_at, type: timestamptz }
+              - column: { name: disputed_at, type: timestamptz }
+              - column: { name: last_reconciled_at, type: timestamptz }
+              - column: { name: version, type: bigint, defaultValueNumeric: 0, constraints: { nullable: false } }
+        - modifyDataType:
+            tableName: job_payments
+            columnName: status
+            newDataType: varchar(30)
+        - sql:
+            dbms: postgresql
+            comment: Pagamentos antigos com sessão Stripe pertencem ao provedor stripe; os demais eram demo.
+            sql: >-
+              UPDATE job_payments SET provider = 'stripe' WHERE stripe_session_id IS NOT NULL;
+              UPDATE job_payments SET status = 'checkout_created' WHERE status = 'pending';
+              UPDATE job_payments SET status = 'paid', paid_at = created_at WHERE status = 'held';
+              UPDATE job_payments SET paid_at = created_at WHERE status IN ('released', 'refunded') AND paid_at IS NULL;
+              UPDATE job_payments SET refunded_at = released_at WHERE status = 'refunded' AND refunded_at IS NULL;
+        - dropDefaultValue:
+            tableName: job_payments
+            columnName: provider
+        - createTable:
+            tableName: payment_events
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: payment_id, type: uuid }
+              - column: { name: type, type: varchar(80), constraints: { nullable: false } }
+              - column: { name: provider_event_id, type: varchar(120) }
+              - column: { name: from_status, type: varchar(30) }
+              - column: { name: to_status, type: varchar(30) }
+              - column: { name: detail, type: text }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+        - addUniqueConstraint:
+            tableName: payment_events
+            columnNames: provider_event_id
+            constraintName: uq_payment_events_provider_event
+        - createIndex:
+            tableName: payment_events
+            indexName: idx_payment_events_payment
+            columns:
+              - column: { name: payment_id }
+              - column: { name: created_at }
+        - addColumn:
+            tableName: jobs
+            columns:
+              - column: { name: version, type: bigint, defaultValueNumeric: 0, constraints: { nullable: false } }
+              - column: { name: delivered_at, type: timestamptz }
+        - sql:
+            dbms: postgresql
+            comment: Um job tem no máximo uma candidatura aceita, também sob concorrência.
+            sql: CREATE UNIQUE INDEX uq_applications_job_accepted ON applications (job_id) WHERE status = 'accepted'
+        - addColumn:
+            tableName: profiles
+            columns:
+              - column: { name: vetting_status, type: varchar(20), defaultValue: not_submitted, constraints: { nullable: false } }
+              - column: { name: vetting_evidence, type: text }
+              - column: { name: vetting_note, type: text }
+              - column: { name: vetted_by, type: uuid }
+              - column: { name: vetted_at, type: timestamptz }
+              - column: { name: stripe_account_id, type: varchar(100) }
+        - sql:
+            dbms: postgresql
+            comment: O booleano antigo vira o estado aprovado; o restante começa sem envio.
+            sql: UPDATE profiles SET vetting_status = 'approved', vetted_at = updated_at WHERE vetted = true
+        - dropColumn:
+            tableName: profiles
+            columnName: vetted
+        - createTable:
+            tableName: vetting_events
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: account_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: from_status, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: to_status, type: varchar(20), constraints: { nullable: false } }
+              - column: { name: actor_account_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: note, type: text }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+        - addForeignKeyConstraint:
+            baseTableName: vetting_events
+            baseColumnNames: account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_vetting_events_account
+        - createTable:
+            tableName: disputes
+            columns:
+              - column: { name: id, type: uuid, constraints: { primaryKey: true, nullable: false } }
+              - column: { name: job_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: opened_by_account_id, type: uuid, constraints: { nullable: false } }
+              - column: { name: reason, type: text, constraints: { nullable: false } }
+              - column: { name: status, type: varchar(30), constraints: { nullable: false } }
+              - column: { name: resolved_by_account_id, type: uuid }
+              - column: { name: resolution_note, type: text }
+              - column: { name: created_at, type: timestamptz, constraints: { nullable: false } }
+              - column: { name: resolved_at, type: timestamptz }
+        - addForeignKeyConstraint:
+            baseTableName: disputes
+            baseColumnNames: job_id
+            referencedTableName: jobs
+            referencedColumnNames: id
+            constraintName: fk_disputes_job
+        - createIndex:
+            tableName: disputes
+            indexName: idx_disputes_job_status
+            columns:
+              - column: { name: job_id }
+              - column: { name: status }

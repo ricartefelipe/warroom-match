@@ -14,8 +14,8 @@ public class DatabaseCleaner {
 
     public void clean() {
         jdbcTemplate.execute("""
-                TRUNCATE TABLE reviews, messages, escrow_payments, applications, jobs,
-                profiles, login_tokens, sessions, accounts
+                TRUNCATE TABLE reviews, messages, payment_events, job_payments, disputes, applications, jobs,
+                vetting_events, profiles, login_tokens, sessions, accounts
                 CASCADE
                 """);
     }

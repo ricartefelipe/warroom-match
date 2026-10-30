@@ -66,6 +66,9 @@ public class ProfileService {
     @Transactional
     public Map<String, Object> setRole(UUID accountId, String roleRaw) {
         AccountRole role = parseRole(roleRaw);
+        if (!role.selfAssignable()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_role");
+        }
         Account account = authService.setRole(accountId, role);
         Instant now = Instant.now();
         profileRepository.findById(accountId).orElseGet(() -> {
@@ -92,7 +95,9 @@ public class ProfileService {
             body.put("availability", profile.getAvailability() == null ? null : profile.getAvailability().name());
             body.put("bio", profile.getBio());
             body.put("hourlyRateCents", profile.getHourlyRateCents());
-            body.put("vetted", profile.isVetted());
+            body.put("vettingStatus", profile.getVettingStatus().name());
+            body.put("vettingNote", profile.getVettingNote());
+            body.put("payoutAccountConfigured", profile.getStripeAccountId() != null && !profile.getStripeAccountId().isBlank());
             body.put("companyName", profile.getCompanyName());
             body.put("updatedAt", profile.getUpdatedAt().toString());
         }

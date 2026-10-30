@@ -3,6 +3,7 @@ package br.com.ricarte.warroom.account;
 import br.com.ricarte.warroom.web.AccountContext;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,9 +17,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProfileController {
 
     private final ProfileService profileService;
+    private final VettingService vettingService;
 
-    public ProfileController(ProfileService profileService) {
+    public ProfileController(ProfileService profileService, VettingService vettingService) {
         this.profileService = profileService;
+        this.vettingService = vettingService;
+    }
+
+    @PostMapping("/vetting")
+    public Map<String, Object> submitVetting(@Valid @RequestBody VettingRequest request) {
+        return vettingService.submit(AccountContext.requireAccountId(), request.evidence());
     }
 
     @GetMapping("/profile")
@@ -57,5 +65,9 @@ public class ProfileController {
     }
 
     public record RoleRequest(@NotBlank String role) {
+    }
+
+    /** Written evidence only (links, references, summary). Identity documents are never uploaded here. */
+    public record VettingRequest(@NotBlank @Size(max = 8000) String evidence) {
     }
 }

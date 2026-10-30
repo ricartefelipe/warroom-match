@@ -7,11 +7,15 @@ import { AppShell } from "@/components/AppShell";
 import {
   acceptApplication,
   applyToJob,
+  cancelJob,
   checkoutJob,
   completeJob,
+  deliverJob,
+  disputeJob,
   formatBrl,
   getJob,
   listMessages,
+  paymentLabel,
   postMessage,
   startJob,
   statusLabel,
@@ -19,6 +23,8 @@ import {
   urgencyLabel,
   type JobDetail,
   type Message,
+  type Payment,
+  type PaymentStatus,
 } from "@/lib/api";
 import { loadSession, type UserRole } from "@/lib/session";
 
@@ -42,6 +48,7 @@ export default function JobDetailPage() {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [reviewSent, setReviewSent] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
 
   const refreshJob = useCallback(async () => {
     const session = loadSession();
@@ -151,8 +158,49 @@ export default function JobDetailPage() {
     if (!session) {
       return;
     }
+    if (!window.confirm("Confirmar a conclusão aceita o trabalho e solicita o repasse ao profissional. Continuar?")) {
+      return;
+    }
     await runAction(async () => {
       await completeJob(session.sessionToken, jobId);
+    });
+  }
+
+  async function onDeliver() {
+    const session = loadSession();
+    if (!session) {
+      return;
+    }
+    await runAction(async () => {
+      await deliverJob(session.sessionToken, jobId);
+    });
+  }
+
+  async function onCancel() {
+    const session = loadSession();
+    if (!session) {
+      return;
+    }
+    if (!window.confirm("Cancelar o job? Se já houver pagamento confirmado, a devolução será solicitada ao provedor.")) {
+      return;
+    }
+    await runAction(async () => {
+      await cancelJob(session.sessionToken, jobId);
+    });
+  }
+
+  async function onDispute(event: FormEvent) {
+    event.preventDefault();
+    const session = loadSession();
+    if (!session || !disputeReason.trim()) {
+      return;
+    }
+    if (!window.confirm("Abrir disputa bloqueia o repasse até a decisão do suporte. Continuar?")) {
+      return;
+    }
+    await runAction(async () => {
+      await disputeJob(session.sessionToken, jobId, disputeReason.trim());
+      setDisputeReason("");
     });
   }
 
@@ -190,12 +238,13 @@ export default function JobDetailPage() {
   const isCompany = role === "company";
   const isPro = role === "pro";
   const isMatchedPro = isPro && job?.matchedProAccountId === accountId;
-  const canMessage =
+  const canMessage = job?.matchedProAccountId != null && (isCompany || isMatchedPro);
+  const canDispute =
     job &&
-    job.status !== "open" &&
-    job.status !== "draft" &&
-    job.status !== "cancelled" &&
-    (isCompany || isMatchedPro || job.myApplicationStatus === "accepted");
+    (isCompany || isMatchedPro) &&
+    (job.status === "funded" || job.status === "in_progress" || job.status === "delivered");
+  const canCancel =
+    job && isCompany && (job.status === "open" || job.status === "matched" || job.status === "funded");
 
   if (loading) {
     return (
@@ -282,7 +331,7 @@ export default function JobDetailPage() {
           ) : null}
           {isCompany && job.status === "matched" ? (
             <button type="button" className="button" disabled={actionLoading} onClick={onCheckout}>
-              {actionLoading ? "Processando..." : "Fundar escrow"}
+              {checkoutLabel(actionLoading, job.payment?.status)}
             </button>
           ) : null}
           {isPro && isMatchedPro && job.status === "funded" ? (
@@ -290,12 +339,58 @@ export default function JobDetailPage() {
               {actionLoading ? "Iniciando..." : "Iniciar trabalho"}
             </button>
           ) : null}
-          {isCompany && job.status === "in_progress" ? (
+          {isPro && isMatchedPro && job.status === "in_progress" ? (
+            <button type="button" className="button" disabled={actionLoading} onClick={onDeliver}>
+              {actionLoading ? "Enviando..." : "Marcar como entregue"}
+            </button>
+          ) : null}
+          {isCompany && (job.status === "in_progress" || job.status === "delivered") ? (
             <button type="button" className="button" disabled={actionLoading} onClick={onComplete}>
-              {actionLoading ? "Concluindo..." : "Confirmar conclusão"}
+              {actionLoading ? "Concluindo..." : "Aceitar entrega e concluir"}
+            </button>
+          ) : null}
+          {canCancel ? (
+            <button type="button" className="button-secondary" disabled={actionLoading} onClick={onCancel}>
+              Cancelar job
             </button>
           ) : null}
         </div>
+
+        {job.status === "matched" && isCompany && job.payment?.status === "checkout_created" ? (
+          <p className="muted">
+            Pagamento ainda não confirmado pelo provedor. O job só avança quando a confirmação chegar; a
+            página não assume pagamento por ter voltado do checkout.
+          </p>
+        ) : null}
+
+        {job.payment ? <PaymentPanel payment={job.payment} /> : null}
+
+        {job.dispute ? (
+          <div className="payment-box">
+            <strong>Disputa aberta</strong>
+            <p style={{ margin: "0.5rem 0 0" }}>{job.dispute.reason}</p>
+            <p className="muted" style={{ margin: "0.5rem 0 0" }}>
+              O repasse fica bloqueado até a decisão do suporte.
+            </p>
+          </div>
+        ) : null}
+
+        {canDispute ? (
+          <form onSubmit={onDispute} style={{ marginTop: "1rem" }}>
+            <div className="field">
+              <label htmlFor="dispute">Abrir disputa (motivo)</label>
+              <input
+                id="dispute"
+                value={disputeReason}
+                onChange={(e) => setDisputeReason(e.target.value)}
+                placeholder="Ex.: entrega parcial, não comparecimento, divergência de escopo"
+              />
+            </div>
+            <button className="button-secondary" type="submit" disabled={actionLoading || !disputeReason.trim()}>
+              Abrir disputa
+            </button>
+          </form>
+        ) : null}
 
         {error ? <p className="error">{error}</p> : null}
       </section>
@@ -384,7 +479,7 @@ export default function JobDetailPage() {
         </section>
       ) : null}
 
-      {job.status === "completed" && !reviewSent ? (
+      {job.status === "completed" && !reviewSent && (isCompany || isMatchedPro) ? (
         <section className="panel">
           <h2 className="hero-title" style={{ fontSize: "1.15rem" }}>
             Avaliar
@@ -426,5 +521,58 @@ export default function JobDetailPage() {
         </section>
       ) : null}
     </AppShell>
+  );
+}
+
+function checkoutLabel(loading: boolean, status: PaymentStatus | undefined): string {
+  if (loading) {
+    return "Processando...";
+  }
+  return status === "checkout_created" ? "Retomar pagamento" : "Pagar";
+}
+
+function PaymentPanel({ payment }: Readonly<{ payment: Payment }>) {
+  return (
+    <div className="payment-box">
+      <strong>
+        Pagamento: {paymentLabel(payment.status)}
+        {payment.demo ? " (simulado)" : ""}
+      </strong>
+      <dl>
+        <dt>Valor</dt>
+        <dd>{formatBrl(payment.amountCents)}</dd>
+        <dt>Taxa da plataforma</dt>
+        <dd>{formatBrl(payment.platformFeeCents)}</dd>
+        <dt>Valor do profissional</dt>
+        <dd>{formatBrl(payment.proAmountCents)}</dd>
+        {payment.paidAt ? (
+          <>
+            <dt>Confirmado em</dt>
+            <dd>{new Date(payment.paidAt).toLocaleString("pt-BR")}</dd>
+          </>
+        ) : null}
+        {payment.status === "payout_requested" ? (
+          <>
+            <dt>Repasse</dt>
+            <dd>
+              solicitado, aguardando confirmação do provedor
+              {payment.failureReason === "pro_not_onboarded" ? " (profissional sem conta de recebimento)" : ""}
+            </dd>
+          </>
+        ) : null}
+        {payment.releasedAt ? (
+          <>
+            <dt>Repasse confirmado em</dt>
+            <dd>{new Date(payment.releasedAt).toLocaleString("pt-BR")}</dd>
+          </>
+        ) : null}
+        {payment.refundedAt ? (
+          <>
+            <dt>Devolvido em</dt>
+            <dd>{new Date(payment.refundedAt).toLocaleString("pt-BR")}</dd>
+          </>
+        ) : null}
+      </dl>
+    </div>
   );
 }
