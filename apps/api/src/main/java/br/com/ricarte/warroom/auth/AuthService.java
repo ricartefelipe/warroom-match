@@ -33,6 +33,7 @@ public class AuthService {
     private final WarroomProperties properties;
     private final JavaMailSender mailSender;
     private final PasswordEncoder passwordEncoder;
+    private final MagicLinkRateLimiter rateLimiter;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public AuthService(
@@ -41,8 +42,10 @@ public class AuthService {
             SessionRepository sessionRepository,
             WarroomProperties properties,
             JavaMailSender mailSender,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            MagicLinkRateLimiter rateLimiter
     ) {
+        this.rateLimiter = rateLimiter;
         this.accountRepository = accountRepository;
         this.loginTokenRepository = loginTokenRepository;
         this.sessionRepository = sessionRepository;
@@ -53,21 +56,32 @@ public class AuthService {
 
     @Transactional
     public Account ensureAccount(String email, String name) {
-        return accountRepository.findByEmail(email).orElseGet(() -> {
+        Account account = accountRepository.findByEmail(email).orElseGet(() -> {
             Instant now = Instant.now();
-            Account account = new Account(
+            return accountRepository.save(new Account(
                     UUID.randomUUID(),
                     email,
                     name == null || name.isBlank() ? email : name,
                     AccountRole.unset,
                     now
-            );
-            return accountRepository.save(account);
+            ));
         });
+        if (isConfiguredAdmin(email) && account.getRole() != AccountRole.admin) {
+            account.setRole(AccountRole.admin);
+            return accountRepository.save(account);
+        }
+        return account;
+    }
+
+    /** Support accounts come only from configuration; nobody can choose the admin role. */
+    private boolean isConfiguredAdmin(String email) {
+        return properties.auth().adminEmails().stream().anyMatch(admin -> admin.equalsIgnoreCase(email));
     }
 
     @Transactional
-    public Map<String, Object> requestMagicLink(String email, String name, String appBaseUrlOverride) {
+    public Map<String, Object> requestMagicLink(String email, String name, String appBaseUrlOverride, String clientAddress) {
+        rateLimiter.checkEmail(email);
+        rateLimiter.checkAddress(clientAddress);
         Account account = ensureAccount(email, name);
         String rawToken = randomToken(32);
         Instant now = Instant.now();
@@ -183,6 +197,16 @@ public class AuthService {
                 .ifPresent(sessionRepository::delete);
     }
 
+    /** The account must exist and hold exactly this role; otherwise 403 wrong_role (or admin_only). */
+    @Transactional(readOnly = true)
+    public Account requireRole(UUID accountId, AccountRole expected) {
+        Account account = requireAccount(accountId);
+        if (account.getRole() != expected) {
+            throw new ApiException(HttpStatus.FORBIDDEN, expected == AccountRole.admin ? "admin_only" : "wrong_role");
+        }
+        return account;
+    }
+
     @Transactional(readOnly = true)
     public Account requireAccount(UUID accountId) {
         return accountRepository.findById(accountId)
@@ -201,8 +225,16 @@ public class AuthService {
     }
 
     @Transactional
+    public Account suspend(UUID accountId) {
+        Account account = requireAccount(accountId);
+        account.setEnabled(false);
+        sessionRepository.deleteByAccountId(accountId);
+        return accountRepository.save(account);
+    }
+
+    @Transactional
     public Account setRole(UUID accountId, AccountRole role) {
-        if (role == AccountRole.unset) {
+        if (!role.selfAssignable()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_role");
         }
         Account account = requireAccount(accountId);

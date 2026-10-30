@@ -76,7 +76,7 @@ public class ReviewService {
 
     private Map<String, Object> toResponse(Review review) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("reviewId", review.getId().toString());
+        body.put("id", review.getId().toString());
         body.put("jobId", review.getJobId().toString());
         body.put("reviewerAccountId", review.getReviewerAccountId().toString());
         body.put("revieweeAccountId", review.getRevieweeAccountId().toString());

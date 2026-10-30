@@ -1,24 +1,24 @@
 package br.com.ricarte.warroom.support;
 
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.PostgreSQLContainer;
 
+/** One PostgreSQL container for the whole suite; every cached Spring context points at it. */
 @SpringBootTest
 @ActiveProfiles("test")
+@Import(NoOpMailConfig.class)
 public abstract class PostgresIntegrationTest {
 
-    @DynamicPropertySource
-    static void datasourceProps(DynamicPropertyRegistry registry) {
-        String url = System.getenv().getOrDefault(
-                "WARROOM_TEST_DB_URL",
-                "jdbc:postgresql://127.0.0.1:5436/warroom"
-        );
-        String user = System.getenv().getOrDefault("WARROOM_TEST_DB_USER", "warroom");
-        String password = System.getenv().getOrDefault("WARROOM_TEST_DB_PASSWORD", "warroom");
-        registry.add("spring.datasource.url", () -> url);
-        registry.add("spring.datasource.username", () -> user);
-        registry.add("spring.datasource.password", () -> password);
+    @ServiceConnection
+    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine")
+            .withDatabaseName("warroom")
+            .withUsername("warroom")
+            .withPassword("warroom");
+
+    static {
+        POSTGRES.start();
     }
 }

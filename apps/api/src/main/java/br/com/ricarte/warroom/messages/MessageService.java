@@ -1,6 +1,9 @@
 package br.com.ricarte.warroom.messages;
 
 import br.com.ricarte.warroom.auth.AuthService;
+import br.com.ricarte.warroom.domain.Account;
+import br.com.ricarte.warroom.domain.AccountRepository;
+import br.com.ricarte.warroom.domain.AccountRole;
 import br.com.ricarte.warroom.domain.ApplicationRepository;
 import br.com.ricarte.warroom.domain.Job;
 import br.com.ricarte.warroom.domain.JobRepository;
@@ -19,17 +22,22 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MessageService {
 
+    static final int MAX_LENGTH = 4000;
+
     private final AuthService authService;
     private final JobRepository jobRepository;
     private final ApplicationRepository applicationRepository;
     private final MessageRepository messageRepository;
+    private final AccountRepository accountRepository;
 
     public MessageService(
             AuthService authService,
             JobRepository jobRepository,
             ApplicationRepository applicationRepository,
-            MessageRepository messageRepository
+            MessageRepository messageRepository,
+            AccountRepository accountRepository
     ) {
+        this.accountRepository = accountRepository;
         this.authService = authService;
         this.jobRepository = jobRepository;
         this.applicationRepository = applicationRepository;
@@ -48,12 +56,15 @@ public class MessageService {
     @Transactional
     public Map<String, Object> postMessage(UUID accountId, UUID jobId, String body) {
         Job job = requireJob(jobId);
-        requireParticipant(accountId, job);
+        Account sender = requireParticipant(accountId, job);
+        if (sender.getRole() == AccountRole.admin) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "support_reads_only");
+        }
         Message message = new Message(
                 UUID.randomUUID(),
                 jobId,
                 accountId,
-                body,
+                sanitize(body),
                 Instant.now()
         );
         messageRepository.save(message);
@@ -65,23 +76,40 @@ public class MessageService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "job_not_found"));
     }
 
-    private void requireParticipant(UUID accountId, Job job) {
-        authService.requireAccount(accountId);
-        if (job.getCompanyAccountId().equals(accountId)) {
-            return;
+    /**
+     * The chat opens after the match and only between the company, the matched professional and
+     * support (read-only). Other applicants never see it.
+     */
+    private Account requireParticipant(UUID accountId, Job job) {
+        Account account = authService.requireAccount(accountId);
+        if (job.getMatchedProAccountId() == null) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "chat_not_open");
         }
-        if (job.getMatchedProAccountId() != null && job.getMatchedProAccountId().equals(accountId)) {
-            return;
-        }
-        if (applicationRepository.existsByJobIdAndProAccountId(job.getId(), accountId)) {
-            return;
+        if (account.getRole() == AccountRole.admin || job.isOwner(accountId) || job.isMatchedPro(accountId)) {
+            return account;
         }
         throw new ApiException(HttpStatus.FORBIDDEN, "job_access_denied");
     }
 
+    static String sanitize(String body) {
+        String cleaned = body.chars()
+                .filter(c -> !Character.isISOControl(c) || c == '\n' || c == '\t')
+                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+                .toString()
+                .strip();
+        if (cleaned.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "message_empty");
+        }
+        if (cleaned.length() > MAX_LENGTH) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "message_too_long");
+        }
+        return cleaned;
+    }
+
     private Map<String, Object> toResponse(Message message) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("messageId", message.getId().toString());
+        body.put("id", message.getId().toString());
+        body.put("senderName", accountRepository.findById(message.getSenderAccountId()).map(Account::getName).orElse(null));
         body.put("jobId", message.getJobId().toString());
         body.put("senderAccountId", message.getSenderAccountId().toString());
         body.put("body", message.getBody());

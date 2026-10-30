@@ -22,21 +22,79 @@ export type JobStatus =
   | "matched"
   | "funded"
   | "in_progress"
+  | "delivered"
   | "completed"
   | "cancelled"
   | "disputed";
+
+export type PaymentStatus =
+  | "checkout_created"
+  | "paid"
+  | "payout_requested"
+  | "released"
+  | "refund_requested"
+  | "refunded"
+  | "disputed"
+  | "expired"
+  | "failed";
+
+export type VettingStatus = "not_submitted" | "submitted" | "approved" | "rejected" | "suspended";
+
+export type Payment = {
+  id: string;
+  provider: "demo" | "stripe";
+  demo: boolean;
+  status: PaymentStatus;
+  currency: string;
+  amountCents: number;
+  platformFeeCents: number;
+  proAmountCents: number;
+  paidAt?: string | null;
+  payoutRequestedAt?: string | null;
+  releasedAt?: string | null;
+  refundedAt?: string | null;
+  disputedAt?: string | null;
+  failureReason?: string | null;
+  transferId?: string | null;
+  refundId?: string | null;
+};
+
+export type Dispute = {
+  id: string;
+  jobId: string;
+  openedByAccountId: string;
+  reason: string;
+  status: "open" | "resolved_release" | "resolved_refund";
+  resolutionNote?: string | null;
+  createdAt: string;
+  resolvedAt?: string | null;
+};
+
+export type PublicConfig = {
+  environment: "local" | "production";
+  billingMode: "demo" | "stripe";
+  demo: boolean;
+  platformFeeBps: number;
+  minBudgetCents: number;
+  currency: string;
+};
 
 export type ApplicationStatus = "pending" | "accepted" | "rejected" | "cancelled";
 
 export type Profile = {
   accountId: string;
+  email?: string;
+  name?: string | null;
   role?: UserRole | null;
-  displayName?: string | null;
   bio?: string | null;
-  skills?: string[];
+  skills?: string | null;
   seniority?: string | null;
-  availability?: "available" | "busy" | "offline";
+  availability?: "available" | "busy" | "offline" | null;
   hourlyRateCents?: number | null;
+  companyName?: string | null;
+  vettingStatus?: VettingStatus;
+  vettingNote?: string | null;
+  payoutAccountConfigured?: boolean;
 };
 
 export type Application = {
@@ -68,6 +126,9 @@ export type JobSummary = {
 
 export type JobDetail = JobSummary & {
   applications?: Application[];
+  payment?: Payment | null;
+  dispute?: Dispute | null;
+  deliveredAt?: string | null;
 };
 
 export type Message = {
@@ -136,6 +197,20 @@ export async function verifyMagicLink(token: string): Promise<AccountSession> {
 }
 
 
+export async function getPublicConfig(): Promise<PublicConfig> {
+  const response = await fetch(`${resolveApiBase()}/v1/config`, { cache: "no-store" });
+  return parse<PublicConfig>(response);
+}
+
+export async function submitVetting(sessionToken: string, evidence: string): Promise<Profile> {
+  const response = await fetch(`${resolveApiBase()}/v1/me/vetting`, {
+    method: "POST",
+    headers: authHeaders(sessionToken),
+    body: JSON.stringify({ evidence }),
+  });
+  return parse<Profile>(response);
+}
+
 export async function getMe(sessionToken: string): Promise<AccountSession> {
   const response = await fetch(`${resolveApiBase()}/v1/auth/me`, {
     headers: authHeaders(sessionToken),
@@ -186,7 +261,7 @@ export async function createJob(
   const response = await fetch(`${resolveApiBase()}/v1/jobs`, {
     method: "POST",
     headers: authHeaders(sessionToken),
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, skillsNeeded: payload.skillsNeeded.join(",") }),
   });
   return parse<JobSummary>(response);
 }
@@ -238,15 +313,46 @@ export async function acceptApplication(
   return parse<JobDetail>(response);
 }
 
-export async function checkoutJob(
-  sessionToken: string,
-  jobId: string
-): Promise<{ url?: string; status?: string }> {
+export type CheckoutResult = {
+  demo: boolean;
+  url?: string | null;
+  paymentId: string;
+  status: PaymentStatus;
+  jobStatus: JobStatus;
+  payment: Payment;
+};
+
+export async function checkoutJob(sessionToken: string, jobId: string): Promise<CheckoutResult> {
   const response = await fetch(`${resolveApiBase()}/v1/jobs/${jobId}/checkout`, {
     method: "POST",
     headers: authHeaders(sessionToken),
   });
-  return parse<{ url?: string; status?: string }>(response);
+  return parse<CheckoutResult>(response);
+}
+
+export async function deliverJob(sessionToken: string, jobId: string): Promise<JobDetail> {
+  const response = await fetch(`${resolveApiBase()}/v1/jobs/${jobId}/deliver`, {
+    method: "POST",
+    headers: authHeaders(sessionToken),
+  });
+  return parse<JobDetail>(response);
+}
+
+export async function disputeJob(sessionToken: string, jobId: string, reason: string): Promise<JobDetail> {
+  const response = await fetch(`${resolveApiBase()}/v1/jobs/${jobId}/dispute`, {
+    method: "POST",
+    headers: authHeaders(sessionToken),
+    body: JSON.stringify({ reason }),
+  });
+  return parse<JobDetail>(response);
+}
+
+export async function cancelJob(sessionToken: string, jobId: string): Promise<JobDetail> {
+  const response = await fetch(`${resolveApiBase()}/v1/jobs/${jobId}/cancel`, {
+    method: "POST",
+    headers: authHeaders(sessionToken),
+  });
+  return parse<JobDetail>(response);
 }
 
 export async function startJob(sessionToken: string, jobId: string): Promise<JobDetail> {
@@ -334,12 +440,61 @@ export function statusLabel(status: JobStatus): string {
       return "fundado";
     case "in_progress":
       return "em andamento";
+    case "delivered":
+      return "entregue";
     case "completed":
       return "concluído";
     case "cancelled":
       return "cancelado";
     case "disputed":
       return "disputa";
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+}
+
+export function paymentLabel(status: PaymentStatus): string {
+  switch (status) {
+    case "checkout_created":
+      return "aguardando pagamento";
+    case "paid":
+      return "pagamento confirmado";
+    case "payout_requested":
+      return "repasse solicitado";
+    case "released":
+      return "repasse confirmado";
+    case "refund_requested":
+      return "devolução solicitada";
+    case "refunded":
+      return "devolvido";
+    case "disputed":
+      return "em disputa";
+    case "expired":
+      return "checkout expirado";
+    case "failed":
+      return "pagamento falhou";
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+}
+
+export function vettingLabel(status: VettingStatus | undefined): string {
+  switch (status) {
+    case "approved":
+      return "aprovado";
+    case "submitted":
+      return "em análise";
+    case "rejected":
+      return "recusado";
+    case "suspended":
+      return "suspenso";
+    case "not_submitted":
+    case undefined:
+      return "não enviado";
     default: {
       const _exhaustive: never = status;
       return _exhaustive;
