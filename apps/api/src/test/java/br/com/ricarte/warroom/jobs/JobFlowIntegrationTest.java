@@ -1,152 +1,142 @@
 package br.com.ricarte.warroom.jobs;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.nullValue;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
+import br.com.ricarte.warroom.support.ApiClient;
 import br.com.ricarte.warroom.support.DatabaseCleaner;
-import br.com.ricarte.warroom.support.NoOpMailConfig;
 import br.com.ricarte.warroom.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.UUID;
+import br.com.ricarte.warroom.support.Scenario;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Import;
-import org.springframework.http.MediaType;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 @AutoConfigureMockMvc
-@Import(NoOpMailConfig.class)
 class JobFlowIntegrationTest extends PostgresIntegrationTest {
 
     @Autowired
-    private MockMvc mockMvc;
-
+    MockMvc mockMvc;
     @Autowired
-    private ObjectMapper objectMapper;
-
+    ObjectMapper objectMapper;
     @Autowired
-    private DatabaseCleaner databaseCleaner;
+    DatabaseCleaner databaseCleaner;
+
+    ApiClient api;
+    Scenario scenario;
 
     @BeforeEach
     void setUp() {
         databaseCleaner.clean();
+        api = new ApiClient(mockMvc, objectMapper);
+        scenario = new Scenario(api);
     }
 
     @Test
-    void fullJobFlowWithDemoEscrowAndFeeSplit() throws Exception {
-        String companyToken = signupWithRole("company-" + UUID.randomUUID() + "@example.com", "company");
-        String proToken = signupWithRole("pro-" + UUID.randomUUID() + "@example.com", "pro");
+    void demoFlowPaysDeliversCompletesAndReleasesWithFeeSplit() throws Exception {
+        Scenario.Matched m = scenario.matched();
 
-        MvcResult createJob = mockMvc.perform(post("/v1/jobs")
-                        .header("Authorization", "Bearer " + companyToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "title": "Incidente API",
-                                  "description": "Precisamos de backend senior urgente",
-                                  "urgency": "p1",
-                                  "budgetCents": 50000,
-                                  "skillsNeeded": "java,spring"
-                                }
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("open"))
-                .andReturn();
-        String jobId = objectMapper.readTree(createJob.getResponse().getContentAsString())
-                .get("jobId").asText();
+        JsonNode checkout = api.post("/v1/jobs/" + m.jobId() + "/checkout", m.company(), null);
+        assertThat(checkout.get("demo").asBoolean()).isTrue();
+        assertThat(checkout.get("status").asText()).isEqualTo("paid");
+        assertThat(checkout.get("jobStatus").asText()).isEqualTo("funded");
+        assertThat(checkout.get("payment").get("platformFeeCents").asLong()).isEqualTo(9000L);
+        assertThat(checkout.get("payment").get("proAmountCents").asLong()).isEqualTo(41000L);
 
-        MvcResult applyResult = mockMvc.perform(post("/v1/jobs/" + jobId + "/apply")
-                        .header("Authorization", "Bearer " + proToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"pitch\":\"Posso começar agora\"}"))
-                .andExpect(status().isOk())
-                .andReturn();
-        String applicationId = objectMapper.readTree(applyResult.getResponse().getContentAsString())
-                .get("applicationId").asText();
+        assertThat(api.post("/v1/jobs/" + m.jobId() + "/start", m.pro(), null).get("status").asText()).isEqualTo("in_progress");
+        assertThat(api.post("/v1/jobs/" + m.jobId() + "/deliver", m.pro(), null).get("status").asText()).isEqualTo("delivered");
 
-        mockMvc.perform(post("/v1/jobs/" + jobId + "/accept/" + applicationId)
-                        .header("Authorization", "Bearer " + companyToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("matched"));
+        JsonNode completed = api.post("/v1/jobs/" + m.jobId() + "/complete", m.company(), null);
+        assertThat(completed.get("status").asText()).isEqualTo("completed");
+        assertThat(completed.get("payment").get("status").asText()).isEqualTo("released");
+        assertThat(completed.get("payment").get("demo").asBoolean()).isTrue();
+        assertThat(completed.get("payment").get("transferId").asText()).startsWith("demo_");
 
-        mockMvc.perform(post("/v1/jobs/" + jobId + "/checkout")
-                        .header("Authorization", "Bearer " + companyToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.demo").value(true))
-                .andExpect(jsonPath("$.status").value("held"))
-                .andExpect(jsonPath("$.platformFeeCents").value(9000))
-                .andExpect(jsonPath("$.proAmountCents").value(41000));
-
-        mockMvc.perform(post("/v1/jobs/" + jobId + "/start")
-                        .header("Authorization", "Bearer " + proToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("in_progress"));
-
-        MvcResult complete = mockMvc.perform(post("/v1/jobs/" + jobId + "/complete")
-                        .header("Authorization", "Bearer " + companyToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("completed"))
-                .andExpect(jsonPath("$.escrow.status").value("released"))
-                .andExpect(jsonPath("$.escrow.platformFeeCents").value(9000))
-                .andExpect(jsonPath("$.escrow.proAmountCents").value(41000))
-                .andReturn();
-
-        JsonNode completeJson = objectMapper.readTree(complete.getResponse().getContentAsString());
-        assertThat(completeJson.get("escrow").get("platformFeeCents").asLong()).isEqualTo(9000L);
-        assertThat(completeJson.get("escrow").get("proAmountCents").asLong()).isEqualTo(41000L);
-        assertThat(completeJson.get("escrow").get("amountCents").asLong()).isEqualTo(50000L);
-
-        mockMvc.perform(get("/v1/jobs/" + jobId)
-                        .header("Authorization", "Bearer " + companyToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("completed"))
-                .andExpect(jsonPath("$.escrow.status").value("released"));
+        JsonNode review = api.post("/v1/jobs/" + m.jobId() + "/reviews", m.company(), "{\"rating\":5,\"comment\":\"ok\"}");
+        assertThat(review.get("rating").asInt()).isEqualTo(5);
     }
 
-    private String signupWithRole(String email, String role) throws Exception {
-        MvcResult magic = mockMvc.perform(post("/v1/auth/magic-link")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"" + email + "\",\"name\":\"Test User\"}"))
-                .andExpect(status().isOk())
-                .andReturn();
-        JsonNode magicJson = objectMapper.readTree(magic.getResponse().getContentAsString());
-        String link = magicJson.get("magicLink").asText();
-        String token = link.substring(link.indexOf("token=") + 6);
+    @Test
+    void doubleCheckoutDoesNotChargeTwice() throws Exception {
+        Scenario.Matched m = scenario.matched();
+        api.post("/v1/jobs/" + m.jobId() + "/checkout", m.company(), null);
 
-        MvcResult verify = mockMvc.perform(post("/v1/auth/verify")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"token\":\"" + token + "\"}"))
-                .andExpect(status().isOk())
-                .andReturn();
-        String sessionToken = objectMapper.readTree(verify.getResponse().getContentAsString())
-                .get("sessionToken").asText();
+        assertThat(api.status(post("/v1/jobs/" + m.jobId() + "/checkout"), m.company(), null)).isEqualTo(409);
+        JsonNode job = api.get("/v1/jobs/" + m.jobId(), m.company());
+        assertThat(job.get("payment").get("amountCents").asLong()).isEqualTo(50000L);
+    }
 
-        mockMvc.perform(get("/v1/auth/me")
-                        .header("Authorization", "Bearer " + sessionToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.email").value(email))
-                .andExpect(jsonPath("$.role").value(nullValue()));
+    @Test
+    void jobCannotStartBeforePaymentIsConfirmed() throws Exception {
+        Scenario.Matched m = scenario.matched();
+        assertThat(api.status(post("/v1/jobs/" + m.jobId() + "/start"), m.pro(), null)).isEqualTo(409);
+    }
 
-        mockMvc.perform(post("/v1/me/role")
-                        .header("Authorization", "Bearer " + sessionToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"role\":\"" + role + "\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.role").value(role));
+    @Test
+    void completedJobNeverGoesBackAndCannotBeDisputedAfterRelease() throws Exception {
+        Scenario.Matched m = scenario.matched();
+        api.post("/v1/jobs/" + m.jobId() + "/checkout", m.company(), null);
+        api.post("/v1/jobs/" + m.jobId() + "/start", m.pro(), null);
+        api.post("/v1/jobs/" + m.jobId() + "/complete", m.company(), null);
 
-        mockMvc.perform(get("/v1/auth/me")
-                        .header("Authorization", "Bearer " + sessionToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.role").value(role));
+        assertThat(api.status(post("/v1/jobs/" + m.jobId() + "/start"), m.pro(), null)).isEqualTo(409);
+        assertThat(api.status(post("/v1/jobs/" + m.jobId() + "/dispute"), m.pro(), "{\"reason\":\"tarde demais\"}")).isEqualTo(409);
+        assertThat(api.status(post("/v1/jobs/" + m.jobId() + "/cancel"), m.company(), null)).isEqualTo(409);
+    }
 
-        return sessionToken;
+    @Test
+    void disputeBlocksReleaseUntilSupportDecides() throws Exception {
+        Scenario.Matched m = scenario.matched();
+        api.post("/v1/jobs/" + m.jobId() + "/checkout", m.company(), null);
+        api.post("/v1/jobs/" + m.jobId() + "/start", m.pro(), null);
+
+        JsonNode disputed = api.post("/v1/jobs/" + m.jobId() + "/dispute", m.company(), "{\"reason\":\"entrega parcial\"}");
+        assertThat(disputed.get("status").asText()).isEqualTo("disputed");
+        assertThat(disputed.get("payment").get("status").asText()).isEqualTo("disputed");
+        assertThat(api.status(post("/v1/jobs/" + m.jobId() + "/complete"), m.company(), null)).isEqualTo(409);
+
+        String admin = scenario.admin();
+        assertThat(api.get("/v1/admin/disputes", admin).size()).isEqualTo(1);
+        JsonNode resolved = api.post("/v1/admin/disputes/" + m.jobId() + "/resolve", admin,
+                "{\"outcome\":\"refund\",\"note\":\"entrega não comprovada\"}");
+        assertThat(resolved.get("status").asText()).isEqualTo("cancelled");
+        assertThat(resolved.get("payment").get("status").asText()).isEqualTo("refunded");
+        assertThat(resolved.get("dispute").get("status").asText()).isEqualTo("resolved_refund");
+    }
+
+    @Test
+    void cancellingAPaidJobRefundsTheCompany() throws Exception {
+        Scenario.Matched m = scenario.matched();
+        api.post("/v1/jobs/" + m.jobId() + "/checkout", m.company(), null);
+
+        JsonNode cancelled = api.post("/v1/jobs/" + m.jobId() + "/cancel", m.company(), null);
+        assertThat(cancelled.get("status").asText()).isEqualTo("cancelled");
+        assertThat(cancelled.get("payment").get("status").asText()).isEqualTo("refunded");
+    }
+
+    @Test
+    void applicationsAfterTheDeadlineAreRefused() throws Exception {
+        String company = api.signup("company");
+        String pro = scenario.approvedPro();
+        JsonNode job = api.post("/v1/jobs", company, """
+                {"title":"Prazo","description":"x","urgency":"p3","budgetCents":20000,
+                 "responseDeadlineAt":"2099-01-01T00:00:00Z"}
+                """);
+        String jobId = job.get("id").asText();
+        assertThat(api.status(post("/v1/jobs/" + jobId + "/apply"), pro, "{\"pitch\":\"ok\"}")).isEqualTo(200);
+        assertThat(api.status(post("/v1/jobs"), company, """
+                {"title":"Passado","description":"x","urgency":"p3","budgetCents":20000,
+                 "responseDeadlineAt":"2000-01-01T00:00:00Z"}
+                """)).isEqualTo(400);
+    }
+
+    @Test
+    void publicConfigSaysDemo() throws Exception {
+        JsonNode config = api.get("/v1/config", null);
+        assertThat(config.get("billingMode").asText()).isEqualTo("demo");
+        assertThat(config.get("demo").asBoolean()).isTrue();
     }
 }
