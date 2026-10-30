@@ -1,4 +1,4 @@
-export type UserRole = "company" | "pro";
+export type UserRole = "company" | "pro" | "admin";
 
 export type AccountSession = {
   accountId: string;
@@ -11,7 +11,7 @@ export type AccountSession = {
 const KEY = "warroom.session";
 
 function normalizeRole(role: unknown): UserRole | null {
-  if (role === "company" || role === "pro") {
+  if (role === "company" || role === "pro" || role === "admin") {
     return role;
   }
   return null;

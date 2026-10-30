@@ -1,15 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import {
   formatBrl,
+  getProfile,
   listJobs,
   statusLabel,
+  submitVetting,
   urgencyLabel,
+  vettingLabel,
   type JobSummary,
+  type Profile,
 } from "@/lib/api";
 import { loadSession } from "@/lib/session";
 
@@ -19,6 +23,9 @@ export default function ProPage() {
   const [myJobs, setMyJobs] = useState<JobSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [evidence, setEvidence] = useState("");
+  const [sending, setSending] = useState(false);
 
   const refresh = useCallback(async () => {
     const session = loadSession();
@@ -31,10 +38,12 @@ export default function ProPage() {
       return;
     }
     try {
-      const [open, mine] = await Promise.all([
+      const [open, mine, me] = await Promise.all([
         listJobs(session.sessionToken, "open"),
         listJobs(session.sessionToken, "mine"),
+        getProfile(session.sessionToken),
       ]);
+      setProfile(me);
       setOpenJobs(open);
       setMyJobs(mine.filter((j) => j.myApplicationStatus != null));
     } catch (err) {
@@ -47,6 +56,27 @@ export default function ProPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  async function onSubmitVetting(event: FormEvent) {
+    event.preventDefault();
+    const session = loadSession();
+    if (!session || !evidence.trim()) {
+      return;
+    }
+    setSending(true);
+    setError(null);
+    try {
+      await submitVetting(session.sessionToken, evidence.trim());
+      setEvidence("");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "falha_vetting");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const approved = profile?.vettingStatus === "approved";
 
   function applicationLabel(status: JobSummary["myApplicationStatus"]): string {
     switch (status) {
@@ -71,8 +101,42 @@ export default function ProPage() {
   return (
     <AppShell>
       <section className="panel">
+        <h1 className="hero-title">Verificação profissional</h1>
+        <p className="muted">
+          Status: <strong>{vettingLabel(profile?.vettingStatus)}</strong>
+          {profile?.vettingNote ? ` · ${profile.vettingNote}` : ""}
+        </p>
+        {!approved ? (
+          <>
+            <p className="muted">
+              Só profissionais aprovados pelo suporte podem se candidatar. Envie links públicos, referências
+              e um resumo da experiência. Não envie documentos de identidade por aqui.
+            </p>
+            {profile?.vettingStatus !== "suspended" ? (
+              <form onSubmit={onSubmitVetting}>
+                <div className="field">
+                  <label htmlFor="evidence">Evidências</label>
+                  <textarea
+                    id="evidence"
+                    value={evidence}
+                    onChange={(e) => setEvidence(e.target.value)}
+                    placeholder="github.com/..., linkedin.com/in/..., referências e resumo"
+                  />
+                </div>
+                <button className="button" type="submit" disabled={sending || !evidence.trim()}>
+                  {sending ? "Enviando..." : profile?.vettingStatus === "submitted" ? "Reenviar evidências" : "Enviar para análise"}
+                </button>
+              </form>
+            ) : null}
+          </>
+        ) : null}
+      </section>
+
+      <section className="panel">
         <h1 className="hero-title">Feed de plantões</h1>
-        <p className="muted">Jobs abertos disponíveis para candidatura.</p>
+        <p className="muted">
+          {approved ? "Jobs abertos disponíveis para candidatura." : "Você verá os jobs, mas só poderá se candidatar após a aprovação."}
+        </p>
         {loading ? (
           <p className="muted" style={{ marginTop: "1rem" }}>
             Carregando...

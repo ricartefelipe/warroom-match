@@ -32,6 +32,11 @@ export default function AppHubPage() {
           router.replace("/app/pro");
           return;
         }
+        if (me.role === "admin") {
+          setError("Conta de suporte: use a API administrativa (docs/OPERACAO.md).");
+          setLoading(false);
+          return;
+        }
         setLoading(false);
       })
       .catch((err) => {

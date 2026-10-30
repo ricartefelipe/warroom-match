@@ -92,7 +92,7 @@ export default function CompanyPage() {
     <AppShell>
       <section className="panel">
         <h1 className="hero-title">Publicar job</h1>
-        <p className="muted">Crie um plantão urgente para profissionais vetted.</p>
+        <p className="muted">Crie um plantão urgente. Só profissionais aprovados pelo suporte podem se candidatar; o pagamento só conta quando o provedor confirma.</p>
         <form onSubmit={onSubmit} style={{ marginTop: "1rem" }}>
           <div className="field">
             <label htmlFor="title">Título</label>
