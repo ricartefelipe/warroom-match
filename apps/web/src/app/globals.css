@@ -444,6 +444,7 @@ textarea {
 }
 
 .demo-banner {
+  display: block;
   background: #7a4b00;
   color: #fff6e5;
   text-align: center;
@@ -453,8 +454,8 @@ textarea {
 }
 
 .badge.delivered {
-  background: rgba(96, 165, 250, 0.18);
-  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.28);
+  color: #eaf2ff;
 }
 
 .payment-box {
@@ -477,4 +478,11 @@ textarea {
 
 .payment-box dd {
   margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }

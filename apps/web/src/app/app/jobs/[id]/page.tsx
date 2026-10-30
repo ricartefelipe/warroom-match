@@ -24,6 +24,7 @@ import {
   type JobDetail,
   type Message,
   type Payment,
+  type PaymentStatus,
 } from "@/lib/api";
 import { loadSession, type UserRole } from "@/lib/session";
 
@@ -237,7 +238,7 @@ export default function JobDetailPage() {
   const isCompany = role === "company";
   const isPro = role === "pro";
   const isMatchedPro = isPro && job?.matchedProAccountId === accountId;
-  const canMessage = job && job.matchedProAccountId != null && (isCompany || isMatchedPro);
+  const canMessage = job?.matchedProAccountId != null && (isCompany || isMatchedPro);
   const canDispute =
     job &&
     (isCompany || isMatchedPro) &&
@@ -330,7 +331,7 @@ export default function JobDetailPage() {
           ) : null}
           {isCompany && job.status === "matched" ? (
             <button type="button" className="button" disabled={actionLoading} onClick={onCheckout}>
-              {actionLoading ? "Processando..." : job.payment?.status === "checkout_created" ? "Retomar pagamento" : "Pagar"}
+              {checkoutLabel(actionLoading, job.payment?.status)}
             </button>
           ) : null}
           {isPro && isMatchedPro && job.status === "funded" ? (
@@ -523,7 +524,14 @@ export default function JobDetailPage() {
   );
 }
 
-function PaymentPanel({ payment }: { payment: Payment }) {
+function checkoutLabel(loading: boolean, status: PaymentStatus | undefined): string {
+  if (loading) {
+    return "Processando...";
+  }
+  return status === "checkout_created" ? "Retomar pagamento" : "Pagar";
+}
+
+function PaymentPanel({ payment }: Readonly<{ payment: Payment }>) {
   return (
     <div className="payment-box">
       <strong>

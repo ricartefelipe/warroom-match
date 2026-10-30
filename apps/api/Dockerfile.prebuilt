@@ -1,4 +1,5 @@
-FROM eclipse-temurin:21-jre-alpine@sha256:82cf3d9ccbe1ed46252008d51b2f2329e6b9e8a2f4394c4bebefc3ea7f4b1372
+FROM eclipse-temurin@sha256:82cf3d9ccbe1ed46252008d51b2f2329e6b9e8a2f4394c4bebefc3ea7f4b1372
+# eclipse-temurin:21-jre-alpine (21.0.13, Alpine 3.24)
 RUN apk upgrade --no-cache \
     && addgroup -S -g 10001 warroom \
     && adduser -S -u 10001 -G warroom -h /app warroom

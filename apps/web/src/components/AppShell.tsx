@@ -30,9 +30,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="app-shell">
       {config?.demo ? (
-        <div className="demo-banner" role="status">
+        <output className="demo-banner">
           MODO DEMONSTRAÇÃO: pagamentos, repasses e devoluções são simulados. Nenhum valor real circula.
-        </div>
+        </output>
       ) : null}
       <header className="topbar">
         <Link href="/app" className="brand">

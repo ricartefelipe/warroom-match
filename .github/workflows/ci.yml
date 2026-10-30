@@ -62,8 +62,8 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
-      - run: npm ci --no-audit --no-fund
-      - run: npx tsc --noEmit
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run typecheck
       - run: npm run build
       - name: Scan the lockfile (HIGH and CRITICAL block)
         run: |

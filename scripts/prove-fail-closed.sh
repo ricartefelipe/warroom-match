@@ -14,7 +14,7 @@ expect_refusal() { # expect_refusal <descrição> <env...>
   logs="$(docker logs "$name" 2>&1 | tail -40)"
   docker rm -f "$name" >/dev/null 2>&1
   set -e
-  if [ "$code" -eq 0 ]; then
+  if [[ "$code" -eq 0 ]]; then
     printf 'FALHA: %s subiu (esperava recusa)\n' "$label" >&2
     exit 1
   fi

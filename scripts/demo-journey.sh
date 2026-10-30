@@ -12,7 +12,7 @@ trap cleanup EXIT
 docker network create "$NET" >/dev/null
 docker run -d --name "$DB" --network "$NET" -e POSTGRES_DB=warroom -e POSTGRES_USER=warroom -e POSTGRES_PASSWORD=warroom \
   --health-cmd "pg_isready -U warroom -d warroom" --health-interval 2s --health-retries 30 postgres:16-alpine >/dev/null
-for _ in $(seq 1 40); do [ "$(docker inspect -f '{{.State.Health.Status}}' "$DB")" = healthy ] && break; sleep 2; done
+for _ in $(seq 1 40); do [[ "$(docker inspect -f '{{.State.Health.Status}}' "$DB")" == healthy ]] && break; sleep 2; done
 # O magic link é enviado por e-mail de verdade; um Mailpit descartável recebe as mensagens.
 docker run -d --name "$MAIL" --network "$NET" axllent/mailpit:v1.28 >/dev/null
 docker run -d --name "$API_C" --network "$NET" -p "127.0.0.1:${PORT}:8080" \
@@ -22,18 +22,33 @@ docker run -d --name "$API_C" --network "$NET" -p "127.0.0.1:${PORT}:8080" \
 for _ in $(seq 1 60); do curl -fsS "$API/actuator/health" >/dev/null 2>&1 && break; sleep 2; done
 curl -fsS "$API/actuator/health" >/dev/null || { docker logs "$API_C" | tail -30; exit 1; }
 
-j() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))' "$1"; }
+STATUS_FIELD="d['status']"
+j() { # j <expressão python sobre d>
+  local expression="$1"
+  python3 -c 'import json,sys; d=json.load(sys.stdin); print(eval(sys.argv[1]))' "$expression"
+}
 login() { # login <email>
-  local link token
-  link=$(curl -fsS -H 'Content-Type: application/json' -d "{\"email\":\"$1\",\"name\":\"$1\"}" "$API/v1/auth/magic-link" | j "d['magicLink']")
+  local email="$1" link token
+  link=$(curl -fsS -H 'Content-Type: application/json' -d "{\"email\":\"$email\",\"name\":\"$email\"}" "$API/v1/auth/magic-link" | j "d['magicLink']")
   token="${link#*token=}"
   curl -fsS -H 'Content-Type: application/json' -d "{\"token\":\"$token\"}" "$API/v1/auth/verify" | j "d['sessionToken']"
 }
 call() { # call <token> <method> <path> [body]
-  curl -fsS -X "$2" -H "Authorization: Bearer $1" -H 'Content-Type: application/json' ${4:+-d "$4"} "$API$3"
+  local token="$1" method="$2" path="$3" body="${4:-}"
+  curl -fsS -X "$method" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' ${body:+-d "$body"} "$API$path"
 }
-code() { curl -sS -o /dev/null -w '%{http_code}' -X "$2" -H "Authorization: Bearer $1" -H 'Content-Type: application/json' ${4:+-d "$4"} "$API$3"; }
-expect() { [ "$1" = "$2" ] || { printf 'FALHA %s: esperado %s, obtido %s\n' "$3" "$1" "$2" >&2; exit 1; }; printf 'ok %s -> %s\n' "$3" "$2"; }
+code() { # code <token> <method> <path> [body]
+  local token="$1" method="$2" path="$3" body="${4:-}"
+  curl -sS -o /dev/null -w '%{http_code}' -X "$method" -H "Authorization: Bearer $token" -H 'Content-Type: application/json' ${body:+-d "$body"} "$API$path"
+}
+expect() { # expect <esperado> <obtido> <descrição>
+  local expected="$1" actual="$2" label="$3"
+  if [[ "$expected" != "$actual" ]]; then
+    printf 'FALHA %s: esperado %s, obtido %s\n' "$label" "$expected" "$actual" >&2
+    exit 1
+  fi
+  printf 'ok %s -> %s\n' "$label" "$actual"
+}
 
 echo "## config pública"
 curl -fsS "$API/v1/config"; echo
@@ -49,17 +64,17 @@ expect 1 "$(call "$ADMIN" GET /v1/admin/vetting/pending | j "len(d)")" "fila de 
 call "$ADMIN" POST /v1/admin/vetting/$PRO_ID '{"decision":"approved","note":"ok"}' >/dev/null
 APP=$(call "$PRO" POST /v1/jobs/$JOB/apply '{"pitch":"Posso começar agora"}' | j "d['id']")
 expect 403 "$(code "$PRO" GET /v1/jobs/$JOB/messages)" "chat fechado antes do match"
-expect matched "$(call "$COMPANY" POST /v1/jobs/$JOB/accept/$APP | j "d['status']")" "match"
+expect matched "$(call "$COMPANY" POST /v1/jobs/$JOB/accept/$APP | j "$STATUS_FIELD")" "match"
 CHECKOUT=$(call "$COMPANY" POST /v1/jobs/$JOB/checkout)
 expect True "$(printf '%s' "$CHECKOUT" | j "d['demo']")" "checkout sinalizado como demo"
-expect paid "$(printf '%s' "$CHECKOUT" | j "d['status']")" "pagamento simulado"
+expect paid "$(printf '%s' "$CHECKOUT" | j "$STATUS_FIELD")" "pagamento simulado"
 expect 409 "$(code "$COMPANY" POST /v1/jobs/$JOB/checkout)" "duplo checkout não cobra"
 call "$COMPANY" POST /v1/jobs/$JOB/messages '{"body":"Acesso pelo cofre de segredos; nada de senha aqui."}' >/dev/null
 expect 1 "$(call "$PRO" GET /v1/jobs/$JOB/messages | j "len(d)")" "chat entre participantes"
-expect in_progress "$(call "$PRO" POST /v1/jobs/$JOB/start | j "d['status']")" "início"
-expect delivered "$(call "$PRO" POST /v1/jobs/$JOB/deliver | j "d['status']")" "entrega"
+expect in_progress "$(call "$PRO" POST /v1/jobs/$JOB/start | j "$STATUS_FIELD")" "início"
+expect delivered "$(call "$PRO" POST /v1/jobs/$JOB/deliver | j "$STATUS_FIELD")" "entrega"
 DONE=$(call "$COMPANY" POST /v1/jobs/$JOB/complete)
-expect completed "$(printf '%s' "$DONE" | j "d['status']")" "conclusão"
+expect completed "$(printf '%s' "$DONE" | j "$STATUS_FIELD")" "conclusão"
 expect released "$(printf '%s' "$DONE" | j "d['payment']['status']")" "repasse simulado confirmado"
 expect 41000 "$(printf '%s' "$DONE" | j "d['payment']['proAmountCents']")" "82% ao profissional"
 expect 200 "$(code "$COMPANY" POST /v1/jobs/$JOB/reviews '{"rating":5,"comment":"ótimo"}')" "avaliação após conclusão"

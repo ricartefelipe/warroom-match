@@ -100,37 +100,13 @@ export default function ProPage() {
 
   return (
     <AppShell>
-      <section className="panel">
-        <h1 className="hero-title">Verificação profissional</h1>
-        <p className="muted">
-          Status: <strong>{vettingLabel(profile?.vettingStatus)}</strong>
-          {profile?.vettingNote ? ` · ${profile.vettingNote}` : ""}
-        </p>
-        {!approved ? (
-          <>
-            <p className="muted">
-              Só profissionais aprovados pelo suporte podem se candidatar. Envie links públicos, referências
-              e um resumo da experiência. Não envie documentos de identidade por aqui.
-            </p>
-            {profile?.vettingStatus !== "suspended" ? (
-              <form onSubmit={onSubmitVetting}>
-                <div className="field">
-                  <label htmlFor="evidence">Evidências</label>
-                  <textarea
-                    id="evidence"
-                    value={evidence}
-                    onChange={(e) => setEvidence(e.target.value)}
-                    placeholder="github.com/..., linkedin.com/in/..., referências e resumo"
-                  />
-                </div>
-                <button className="button" type="submit" disabled={sending || !evidence.trim()}>
-                  {sending ? "Enviando..." : profile?.vettingStatus === "submitted" ? "Reenviar evidências" : "Enviar para análise"}
-                </button>
-              </form>
-            ) : null}
-          </>
-        ) : null}
-      </section>
+      <VettingPanel
+        profile={profile}
+        evidence={evidence}
+        sending={sending}
+        onEvidenceChange={setEvidence}
+        onSubmit={onSubmitVetting}
+      />
 
       <section className="panel">
         <h1 className="hero-title">Feed de plantões</h1>
@@ -195,5 +171,57 @@ export default function ProPage() {
         )}
       </section>
     </AppShell>
+  );
+}
+
+type VettingPanelProps = Readonly<{
+  profile: Profile | null;
+  evidence: string;
+  sending: boolean;
+  onEvidenceChange: (value: string) => void;
+  onSubmit: (event: FormEvent) => void;
+}>;
+
+function VettingPanel({ profile, evidence, sending, onEvidenceChange, onSubmit }: VettingPanelProps) {
+  const status = profile?.vettingStatus;
+  const approved = status === "approved";
+  const canSubmit = !approved && status !== "suspended";
+  let submitLabel = "Enviar para análise";
+  if (sending) {
+    submitLabel = "Enviando...";
+  } else if (status === "submitted") {
+    submitLabel = "Reenviar evidências";
+  }
+
+  return (
+    <section className="panel">
+      <h1 className="hero-title">Verificação profissional</h1>
+      <p className="muted">
+        Status: <strong>{vettingLabel(status)}</strong>
+        {profile?.vettingNote ? ` · ${profile.vettingNote}` : ""}
+      </p>
+      {approved ? null : (
+        <p className="muted">
+          Só profissionais aprovados pelo suporte podem se candidatar. Envie links públicos, referências e
+          um resumo da experiência. Não envie documentos de identidade por aqui.
+        </p>
+      )}
+      {canSubmit ? (
+        <form onSubmit={onSubmit}>
+          <div className="field">
+            <label htmlFor="evidence">Evidências</label>
+            <textarea
+              id="evidence"
+              value={evidence}
+              onChange={(e) => onEvidenceChange(e.target.value)}
+              placeholder="github.com/..., linkedin.com/in/..., referências e resumo"
+            />
+          </div>
+          <button className="button" type="submit" disabled={sending || !evidence.trim()}>
+            {submitLabel}
+          </button>
+        </form>
+      ) : null}
+    </section>
   );
 }
