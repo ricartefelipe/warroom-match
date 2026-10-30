@@ -1,5 +1,9 @@
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21-jre-alpine@sha256:82cf3d9ccbe1ed46252008d51b2f2329e6b9e8a2f4394c4bebefc3ea7f4b1372
+RUN apk upgrade --no-cache \
+    && addgroup -S -g 10001 warroom \
+    && adduser -S -u 10001 -G warroom -h /app warroom
 WORKDIR /app
-COPY target/warroom-api-*.jar /app/app.jar
+COPY --chown=warroom:warroom target/warroom-api-*.jar /app/app.jar
+USER warroom
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

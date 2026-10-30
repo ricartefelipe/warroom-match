@@ -1,0 +1,92 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [master, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: api (build and integration tests with PostgreSQL)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Build and test (Testcontainers PostgreSQL 16)
+        run: mvn -B verify
+      - name: Count executed tests
+        run: |
+          python3 - <<'PY'
+          import glob, re, sys
+          total = errors = failures = skipped = 0
+          for path in glob.glob("target/surefire-reports/TEST-*.xml"):
+              head = open(path).read(4000)
+              total += int(re.search(r'tests="(\d+)"', head).group(1))
+              errors += int(re.search(r'errors="(\d+)"', head).group(1))
+              failures += int(re.search(r'failures="(\d+)"', head).group(1))
+              skipped += int(re.search(r'skipped="(\d+)"', head).group(1))
+          print(f"tests={total} errors={errors} failures={failures} skipped={skipped}")
+          sys.exit(0 if total > 0 and errors == failures == skipped == 0 else 1)
+          PY
+      - name: Scan the packaged dependencies (HIGH and CRITICAL block)
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -w /src aquasec/trivy:0.76.1 fs \
+            --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --no-progress target/warroom-api-0.2.0.jar
+
+  web:
+    name: web (type check, lint and build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npm run build
+      - name: Scan the lockfile (HIGH and CRITICAL block)
+        run: |
+          docker run --rm -v "$PWD:/src:ro" -w /src aquasec/trivy:0.76.1 fs \
+            --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --no-progress --skip-dirs node_modules --skip-dirs .next .
+
+  images:
+    name: images (build, scan, fail-closed and demo journey)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the final images
+        run: |
+          docker build -t warroom-api:ci apps/api
+          docker build -t warroom-web:ci --build-arg NEXT_PUBLIC_API_BASE_URL=same-origin apps/web
+      - name: Scan the final images (HIGH and CRITICAL block)
+        run: |
+          for image in warroom-api:ci warroom-web:ci; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.76.1 image \
+              --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --no-progress "$image"
+          done
+      - name: Production without financial configuration refuses to start
+        run: bash scripts/prove-fail-closed.sh warroom-api:ci
+      - name: Demo journey against the final image (two actors, real login)
+        run: bash scripts/demo-journey.sh warroom-api:ci

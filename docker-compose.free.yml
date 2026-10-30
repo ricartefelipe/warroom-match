@@ -14,7 +14,7 @@ services:
       retries: 10
 
   mailpit:
-    image: axllent/mailpit:latest
+    image: axllent/mailpit:v1.28
     ports:
       - "18027:8025"
 
@@ -31,7 +31,9 @@ services:
       WARROOM_API_BASE_URL: http://localhost:9082
       WARROOM_EXPOSE_MAGIC_LINK: "true"
       WARROOM_TRUST_FORWARDED_HOST: "true"
-      WARROOM_DEMO_ESCROW: "true"
+      WARROOM_ENVIRONMENT: local
+      WARROOM_BILLING_MODE: demo
+      WARROOM_ADMIN_EMAILS: ${WARROOM_ADMIN_EMAILS:-support@warroom.local}
       WARROOM_SMTP_HOST: mailpit
       WARROOM_SMTP_PORT: "1025"
       WARROOM_SMTP_AUTH: "false"
@@ -52,7 +54,7 @@ services:
       - api
 
   caddy:
-    image: caddy:2.9-alpine
+    image: caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     ports:
       - "9082:80"
     volumes:
