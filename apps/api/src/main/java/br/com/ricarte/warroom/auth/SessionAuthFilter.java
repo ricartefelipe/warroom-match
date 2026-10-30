@@ -61,7 +61,7 @@ public class SessionAuthFilter extends OncePerRequestFilter {
                 || path.startsWith("/v1/auth/password")) {
             return false;
         }
-        if (path.startsWith("/v1/billing/stripe/webhook")) {
+        if (path.startsWith("/v1/billing/stripe/webhook") || path.equals("/v1/config")) {
             return false;
         }
         if (path.startsWith("/actuator")) {

@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -78,6 +79,19 @@ public class JobController {
         return jobService.startJob(AccountContext.requireAccountId(), jobId);
     }
 
+    @PostMapping("/{id}/deliver")
+    public Map<String, Object> deliver(@PathVariable("id") UUID jobId) {
+        return jobService.deliverJob(AccountContext.requireAccountId(), jobId);
+    }
+
+    @PostMapping("/{id}/dispute")
+    public Map<String, Object> dispute(
+            @PathVariable("id") UUID jobId,
+            @Valid @RequestBody DisputeRequest request
+    ) {
+        return jobService.openDispute(AccountContext.requireAccountId(), jobId, request.reason());
+    }
+
     @PostMapping("/{id}/complete")
     public Map<String, Object> complete(@PathVariable("id") UUID jobId) {
         return jobService.completeJob(AccountContext.requireAccountId(), jobId);
@@ -89,15 +103,18 @@ public class JobController {
     }
 
     public record CreateJobRequest(
-            @NotBlank String title,
-            @NotBlank String description,
+            @NotBlank @Size(max = 300) String title,
+            @NotBlank @Size(max = 20000) String description,
             @NotBlank String urgency,
             @Positive long budgetCents,
-            String skillsNeeded,
+            @Size(max = 2000) String skillsNeeded,
             Instant responseDeadlineAt
     ) {
     }
 
-    public record ApplyRequest(@NotBlank String pitch) {
+    public record ApplyRequest(@NotBlank @Size(max = 4000) String pitch) {
+    }
+
+    public record DisputeRequest(@NotBlank @Size(max = 4000) String reason) {
     }
 }

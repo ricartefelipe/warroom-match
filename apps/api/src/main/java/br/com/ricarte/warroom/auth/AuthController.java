@@ -35,7 +35,8 @@ public class AuthController {
         return authService.requestMagicLink(
                 request.email(),
                 request.name(),
-                PublicBaseUrl.resolve(httpRequest, properties)
+                PublicBaseUrl.resolve(httpRequest, properties),
+                httpRequest.getRemoteAddr()
         );
     }
 
